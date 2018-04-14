@@ -29,22 +29,25 @@ DHTesp dht_2;
 
 // WiFi
 #include <ESP8266WiFi.h>
-#include <ESP8266WiFiMulti.h>
+// #include <ESP8266WiFiMulti.h>
 
 #include <ESP8266HTTPClient.h>
 
 const char* ssid = "Vinovinovino";
 const char* password = "Pucci1981";
-const char* request = "http://api.openweathermap.org/data/2.5/weather?q=Marina%20Del%20Rey,us&mode=json&APPID=de3b9d61b8be217fc92029bcc69780aa&units=metric";
+const char* nowcast_url  = "http://api.openweathermap.org/data/2.5/weather?q=Marina%20Del%20Rey,us&mode=json&APPID=de3b9d61b8be217fc92029bcc69780aa&units=metric";
+const char* forecast_url = "http://api.openweathermap.org/data/2.5/forecast?q=Marina%20Del%20Rey,us&mode=json&APPID=de3b9d61b8be217fc92029bcc69780aa&units=metric";
+//const char* forecast_url = "http://api.openweathermap.org/data/2.5/weather?q=Los%20Angeles,us&mode=json&APPID=de3b9d61b8be217fc92029bcc69780aa&units=metric";
+
 
 HTTPClient http;
-ESP8266WiFiMulti WiFiMulti;
+// ESP8266WiFiMulti WiFiMulti;
 unsigned long respond_time = 0; // time that store the request moment
-unsigned long wait_time = 60000; // How ofter do the request
+unsigned long wait_time = 1000; // How ofter do the request
 
 //json
 #include <ArduinoJson.h>
-String respond;
+String nowcast_respond, forecast_respond;
 
 // For testing icons
 //int codes[]={0,800,801,802,-10,700,701,900,200,201,0,0,0,0,0};
@@ -52,32 +55,24 @@ String respond;
 
 bool WiFi_isconnected, WiFi_isanswer, WiFi_coldrun;
 
-
 // Time
 #include <Time.h>
 #include <TimeLib.h>
 
 //time_t weatherTime;
 
-/* 
- * Heart image below is defined directly in flash memory.
- * This reduces SRAM consumption.
- * The image is defined from bottom to top (bits), from left to
- * right (bytes).
- */
-const PROGMEM uint8_t heartImage[8] =
+// Memory
+extern "C" {
+#include "user_interface.h"
+}
+void mf()
 {
-    0B00001110,
-    0B00011111,
-    0B00111111,
-    0B01111110,
-    0B01111110,
-    0B00111101,
-    0B00011001,
-    0B00001110
-};
+    // Print free memory
+    Serial.print("freeMemory = ");
+    Serial.println(system_get_free_heap_size());
+}
 
-
+// Not in use
 uint8_t* get_icon(const char* bits)
 {
   // Convert bitmap into uint8_t bitmap
@@ -96,8 +91,7 @@ uint8_t* get_icon(const char* bits)
   return bitmap;
 }
 
-
-static void symbolTable()
+void symbolTable()
 {
    // Symbol test
     display.setCursor(0,0);
@@ -134,7 +128,7 @@ String uptime()
    return String(uptime);
 }
 
-static void textDHT()
+void textDHT()
 {
     // Display text from DHT sensors
   
@@ -156,34 +150,34 @@ static void textDHT()
 
     String time_str = String(millis());
 
-
-  display.setTextSize(1);  
-  display.setCursor(0,8);  display.print(dht.getStatusString());    
-  display.print(" DH11 ");
-  display.print(Sensor1);
-  display.print(" " + uptime());
-  //display.println(Sensor2);
-  //display.setCursor(0,0);
-  //display.println(time_str);
-
+    display.setTextSize(1);  
+    display.setCursor(0,8);  display.print(dht.getStatusString());
+    if (dht.getStatus() == 0)
+    {
+      display.print(" DH11 ");
+      display.print(Sensor1);
+      display.print(" " + uptime());    
+    //display.println(Sensor2);
+    //display.setCursor(0,0);
+    //display.println(time_str);
+    }
 }
 
-static void textWeather()
+void textWeather()
 {
   // Display text from Weather
-
-  
   // Parse Json string and put info on display
-  DynamicJsonBuffer jsonBuffer;
-  JsonObject& root = jsonBuffer.parseObject(respond);
-  JsonObject& weather = root["weather"][0];
-  JsonObject& main    = root["main"];
+  Serial.println("Processing the nowcast");
+  //Serial.println(nowcast_respond);
 
-  
-    
+  DynamicJsonBuffer jsonBuffer;
+  JsonObject& root = jsonBuffer.parseObject(nowcast_respond);
+
   if(root.success())
   {
-    
+    JsonObject& weather = root["weather"][0];
+    JsonObject& main    = root["main"];
+  
     // Temperature
     const char* __main = weather["main"];
     float temp     = main["temp"];    
@@ -194,7 +188,7 @@ static void textWeather()
     temp_max = round(temp_max);
     temp_min = round(temp_min);
 
-    Serial.println(__main);
+    // Serial.println(__main);
     display.setTextSize(2);
     display.setCursor(69+2, 18); display.print(temp,0); display.print(deg());   
     display.setCursor(44+4, 38); 
@@ -206,8 +200,9 @@ static void textWeather()
     */
 
     // Icon
-
-    int code = root["cod"];
+    //int code = root["cod"];
+    int code = weather["id"];
+    
 
 
     // For testing icons
@@ -254,12 +249,47 @@ static void textWeather()
   else
   {
     display.setTextSize(2);
-    display.setCursor(80, 16);//32 48
-    display.print("???");   
+    display.setCursor(71, 18);
+    display.print("???");
+    Serial.println("root parsing error");
   }  
 }
 
-static void textWiFi()
+void parseForecast()
+{
+  // Parse forecast string
+  Serial.println("Processing the forecast");
+  //Serial.println(forecast_respond);
+  //mf();
+  DynamicJsonBuffer jsonBuffer;
+  JsonObject& root = jsonBuffer.parseObject(forecast_respond);
+  //mf();
+  if(root.success())
+  {
+   
+    //JsonObject& list = root["list"]; // get the list
+
+    Serial.println("Getting size:");
+    int walk = min(4, int(root["list"].size()));
+   
+    Serial.println("Size: " + String(root["list"].size()));
+  
+    for (int i = 0; i<walk; i++)
+    {
+      JsonObject& weather = root["list"][i];
+      weather.printTo(Serial);
+      Serial.println();
+    }
+  }
+  else
+  {
+    Serial.println("Parsing failed");
+    
+  }
+  
+}
+
+void textWiFi()
 {
   //display.setCursor(0,0);
   //display.setTextSize(1);
@@ -275,7 +305,7 @@ static void textWiFi()
   }
 }
 
-static void blinki(int n)
+void blinki(int n)
 {  
   // Blink LED n time
   unsigned long dtime = 100;
@@ -291,7 +321,6 @@ static void blinki(int n)
 bool wifi_connect()
 {
   // Connect to WiFi, using 10 attemps. Return status of connection
-
   int count=0;
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
@@ -308,18 +337,49 @@ bool wifi_connect()
   }
   else
   {
-  Serial.println("No connection");
+    Serial.println("No connection");
   }
   
   return WiFi_status;
 }
 
-bool wifi_request()
+bool wifi_nowcast()
+{
+    // Get current weather
+    return wifi_get(nowcast_url, &nowcast_respond);  
+}
+
+bool wifi_forecast()
+{
+    // Get weather forecast
+    //forecast_respond = wifi_get_string(forecast_url); 
+    //mf();  
+    //return (forecast_respond.length()>0);   
+    bool recived = wifi_get(forecast_url, &forecast_respond);
+    if(recived)
+    {
+      int count = 0;
+      for(int c=0; c<5; c++) // find only 4 items 
+      {
+        count = forecast_respond.indexOf("\"dt\"", count+1);        
+      }
+      //mf();
+      if(count > 2)
+      forecast_respond = forecast_respond.substring(0, count-2) + "]}";
+      //mf();
+      //Serial.println(forecast_respond);
+    }
+    
+    return recived;
+}
+
+String wifi_get_string(const char* u) { return String(); }
+
+bool wifi_get(const char* url, String * answer)
 {
     // Get json string by http client. Return if the string was returned.
-    
-    bool output = false;
-    http.begin(request); //HTTPS ?
+    Serial.println(url);
+    http.begin(url); //HTTPS ?
     int httpCode = http.GET();
     
     // httpCode will be negative on error
@@ -328,27 +388,13 @@ bool wifi_request()
         Serial.printf("[HTTP] GET... code: %d\n", httpCode);
         // file found at server
         if(httpCode == HTTP_CODE_OK) {
-            respond = http.getString();
-            
-            DynamicJsonBuffer jsonBuffer;
-            JsonObject& root = jsonBuffer.parseObject(respond);
-            if(root.success())
-            {
-              Serial.println("root: ");
-              root.printTo(Serial);
-              Serial.println();
-            }
-            else
-            {
-              Serial.println(respond);
-            }
-            output = true;
+            *answer = http.getString();
         }
     } else {
         Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
     }
     http.end();
-    return output;
+    return (httpCode == HTTP_CODE_OK);
 }
 
 String timeStr(time_t t)
@@ -386,31 +432,39 @@ void setup()
     WiFi_coldrun = true; // Check if we just startes the device
 
     // Setup json    
+
+    mf();
 }
 
 void loop()
 {
+    //mf();   
     display.clearDisplay();
     textWiFi();
     textDHT();
     blinki(1);
     digitalWrite(LED_BUILTIN,HIGH);        
-        
+    
     if((WiFi.status() == WL_CONNECTED)) {
 
       if ((millis() >= respond_time + wait_time) || WiFi_coldrun) // We will wait first wait_time because millis and respond_time will be 0 on start
       {        
-        Serial.print(String(millis()) + " >= " + String(respond_time + wait_time));  Serial.println("");
-        WiFi_isanswer = wifi_request();         
+        Serial.print("WiFi update: " + String(millis()) + " >= " + String(respond_time + wait_time));  Serial.println("");
+        WiFi_isanswer = wifi_nowcast();         
+        //mf();
         if (WiFi_isanswer)
         {
           respond_time = millis();
           WiFi_coldrun = false;
+
+          // basic information is recived, get forecast           
+          if (wifi_forecast()){ parseForecast(); }
+          //mf();
+          //else{}
         }
       }
       // if aswer - json put on display
       // if not - continue
-      
     }
     else
     {
@@ -424,8 +478,9 @@ void loop()
    {
     textWeather();
    }
-    
     blinki(2);    
     display.display();
+    mf();
     delay(1000);    
+    
 }
