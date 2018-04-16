@@ -8,6 +8,10 @@
 Adafruit_SSD1306 display(OLED_RESET);
 #include <SPI.h>
 #include <Wire.h>
+bool displayStatus = true;
+
+#define DISPLAY_DIM_LEVEL 150
+#define DISPLAY_OFF_LEVEL 30
 
 // DH11 Sensor
 #include <DHTesp.h>
@@ -19,20 +23,25 @@ DHTesp dht;
 #include <ESP8266HTTPClient.h>
 
 #include "constant.h"
+#define CITY "Marina%20Del%20Rey"
+//#define CITY "Miami"
+//#define CITY "New%20Orleans"
 const char* ssid = SSDI;
 const char* password = PASS;
-const char* nowcast_url  = "http://api.openweathermap.org/data/2.5/weather?q=Marina%20Del%20Rey,us&mode=json&APPID=" APPID "&units=metric";
-const char* forecast_url = "http://api.openweathermap.org/data/2.5/forecast?q=Marina%20Del%20Rey,us&mode=json&APPID=" APPID "&units=metric";
+const char* nowcast_url  = "http://api.openweathermap.org/data/2.5/weather?q=" CITY ",us&mode=json&APPID=" APPID "&units=metric";
+const char* forecast_url = "http://api.openweathermap.org/data/2.5/forecast?q=" CITY ",us&mode=json&APPID=" APPID "&units=metric";
 //const char* forecast_url = "http://api.openweathermap.org/data/2.5/weather?q=Los%20Angeles,us&mode=json&APPID=" APPID "&units=metric";
 
 HTTPClient http;
 unsigned long respond_time = 0; // time that store the request moment
-unsigned long wait_time = 5000; // How ofter do the request (todo change to DEFINE)
+//#define WAIT_TIME 5000 // How ofter do the request (todo change to DEFINE)
+//#define UPDATE_TIME 5000 // How do we wait before the next loop
+
+#define WAIT_TIME 250000 // How ofter do the request (todo change to DEFINE) 5 min
+#define UPDATE_TIME 5000 // How do we wait before the next loop 5 sec
 
 //json
 #include <ArduinoJson.h>
-String forecast_respond;
-bool forecast_umbrella;
 float forecast_max_temp, forecast_min_temp;
 
 bool WiFi_isconnected, WiFi_isanswer, WiFi_coldrun;
@@ -198,6 +207,7 @@ bool getNowcast()
     JsonObject& root = jsonBuffer.parseObject(respond);
     if(root.success())
     {
+      Serial.println(respond);
       JsonObject& weather = root["weather"][0];
       JsonObject& main    = root["main"];
 
@@ -212,6 +222,15 @@ bool getNowcast()
 
       //Time 
       time_t weatherTime = root["dt"];
+
+      // Rain
+      frame.rain = 0;
+      JsonObject& rain = weather["rain"];          
+      if (rain.success())
+      {
+         float r = rain["3h"];
+         frame.rain = r;
+      }
 
       frame.weather_code = code;
       frame.weather_str = weather_str;
@@ -284,7 +303,7 @@ bool getForecast()
 
           if (code >= 900)
           {
-             const char* weather_str = weather["main"];
+            const char* weather_str = weather["main"];
             frame.weather_code = code;
             frame.weather_str = weather_str;
           }
@@ -299,9 +318,9 @@ bool getForecast()
           Serial.println();
         }
 
-        frame.rain = rain_get;
+        frame.rain += rain_get;
         frame.temp_range = String(round(temp_min)) + "-" + String(round(temp_max)) + deg();
-      
+        // Serial.print(frame.rain); Serial.print(" | " + frame.temp_range);
       }
       else
       {
@@ -323,11 +342,15 @@ void displayFrame()
 
     int code = frame.weather_code;
 
-    if(frame.rain > 0 && code < 900)
+    Serial.print("Rain: "); Serial.println(frame.rain);
+    if(frame.rain >= 0.1 && code < 900)
     {
-      display.drawBitmap(X_ICON, Y_ICON, clear_icon, W_ICON, H_ICON, WHITE); 
-      display.setCursor(32, 2);
-      display.print(frame.rain); 
+      display.drawBitmap(X_ICON, Y_ICON, umbrella_icon, W_ICON, H_ICON, WHITE); 
+      display.setTextSize(1);
+      display.setTextColor(BLACK);
+      display.setCursor(12, 24);
+      display.print(String(frame.rain)); 
+      display.setTextColor(WHITE);
     }
     else
     {    
@@ -376,6 +399,10 @@ void displayWiFi()
   {
   display.drawBitmap(X_WIFI, Y_WIFI, wifi_error, W_WIFI, H_WIFI, WHITE);  // TODO - CHANGE   
   }
+
+  display.setTextSize(1);  
+  display.setCursor(104, 8);  
+  display.print(uptime());
 }
 
 void displayDHT()
@@ -383,6 +410,38 @@ void displayDHT()
   display.setTextSize(1);  
   display.setCursor(0,8);  
   display.print(frame.dht_string);
+}
+
+void setContrast()
+{
+  int A0_read = analogRead(A0);
+  uint8_t brightness = map(A0_read, 0, 1024, 0, 255);
+
+  if (brightness >DISPLAY_OFF_LEVEL )
+  {
+    wakeDisplay();
+   if (brightness > DISPLAY_DIM_LEVEL )
+      display.dim(false);
+    else
+      display.dim(true);     
+  }
+  else  
+     sleepDisplay();
+   
+  Serial.print("Photoresistor: "); Serial.print(A0_read); Serial.print(" - "); Serial.println(brightness);
+}
+
+void sleepDisplay() {
+  display.ssd1306_command(SSD1306_DISPLAYOFF);
+  displayStatus = false;
+}
+
+void wakeDisplay() {
+  if (!displayStatus)
+  {
+    display.ssd1306_command(SSD1306_DISPLAYON);
+    displayStatus = true;
+  }  
 }
 
 void setup()
@@ -402,6 +461,7 @@ void setup()
     display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
     // Clear the buffer.
     display.clearDisplay();
+    display.display();
     display.setTextColor(WHITE);
 
    // symbolTable();
@@ -416,6 +476,7 @@ void setup()
 
 void loop()
 {
+    setContrast();
     blinki(2);
     digitalWrite(LED_BUILTIN,LOW);
     
@@ -423,9 +484,9 @@ void loop()
         
     if((WiFi.status() == WL_CONNECTED)) {
 
-      if ((millis() >= respond_time + wait_time) || WiFi_coldrun) // We will wait first wait_time because millis and respond_time will be 0 on start
+      if ((millis() >= respond_time + WAIT_TIME) || WiFi_coldrun) // We will wait first wait_time because millis and respond_time will be 0 on start
       {        
-        Serial.print("WiFi update: " + String(millis()) + " >= " + String(respond_time + wait_time));  Serial.println("");
+        Serial.print("WiFi update: " + String(millis()) + " >= " + String(respond_time + WAIT_TIME));  Serial.println("");
         //WiFi_isanswer = wifi_nowcast();         
         //mf();
         if (getNowcast())
@@ -445,5 +506,5 @@ void loop()
     display.display();
     
     mf();
-    delay(4000);       
+    delay(UPDATE_TIME);       
 }
