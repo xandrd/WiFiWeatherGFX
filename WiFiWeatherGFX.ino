@@ -11,7 +11,7 @@ Adafruit_SSD1306 display(OLED_RESET);
 bool displayStatus = true;
 
 #define DISPLAY_DIM_LEVEL 150
-#define DISPLAY_OFF_LEVEL 30
+#define DISPLAY_OFF_LEVEL 5
 
 // DH11 Sensor
 #include <DHTesp.h>
@@ -38,7 +38,7 @@ unsigned long respond_time = 0; // time that store the request moment
 //#define UPDATE_TIME 5000 // How do we wait before the next loop
 
 #define WAIT_TIME 250000 // How ofter do the request (todo change to DEFINE) 5 min
-#define UPDATE_TIME 5000 // How do we wait before the next loop 5 sec
+#define UPDATE_TIME 2000 // How do we wait before the next loop 5 sec
 
 //json
 #include <ArduinoJson.h>
@@ -49,6 +49,11 @@ bool WiFi_isconnected, WiFi_isanswer, WiFi_coldrun;
 // Time
 #include <Time.h>
 #include <TimeLib.h>
+#include <Timezone.h>
+TimeChangeRule PDT = { "PDT", Second, Sun, Mar, 2, -420 };    //Daylight time = UTC - 7 hours
+TimeChangeRule PST = { "PST", First, Sun, Nov, 2, -480 };     //Standard time = UTC - 8 hours
+Timezone Pacific(PDT, PST);
+
 
 struct Frame{
   String update_time;
@@ -104,6 +109,7 @@ String timeStr(time_t t)
   // Return string time from time
   // ToDo - return for LA, maybe with clock...
   String timeStr;  
+  t = Pacific.toLocal(t);
   
   //timeStr = String(year(t))+"."+String(month(t))+"."+String(day(t))+" "+String(hour(t))+":"+String(minute(t))+":"+String(second(t));
   timeStr = String(monthShortStr(month(t)))+" "+String(day(t))+" "+String(hour(t))+":"+String(minute(t));
@@ -387,7 +393,7 @@ void displayFrame()
     display.setTextSize(1);    
     display.setCursor(0, 56); display.print(frame.weather_str); 
     display.setCursor(104, 0); display.print(code);
-    display.setCursor(10, 0);  display.print(frame.update_time);
+    display.setCursor(12, 0);  display.print(frame.update_time);
 }
 
 void displayWiFi()
@@ -453,7 +459,7 @@ void setup()
   
     pinMode(LED_BUILTIN,OUTPUT);
     // Setup DHT11
-    dht.setup(2); // Connect DHT sensor to GPIO 2 which is D4
+    dht.setup(13); // Connect DHT sensor to GPIO 2 which is D4
     //dht.setup(2); // Connect DHT sensor to GPIO 2 which is D4
     //dht_2.setup(13); // Connect temp DHT sensor to GPIO 13 which is D7
 
