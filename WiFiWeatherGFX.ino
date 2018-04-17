@@ -10,8 +10,8 @@ Adafruit_SSD1306 display(OLED_RESET);
 #include <Wire.h>
 bool displayStatus = true;
 
-#define DISPLAY_DIM_LEVEL 150
-#define DISPLAY_OFF_LEVEL 5
+#define DISPLAY_DIM_LEVEL 800
+#define DISPLAY_OFF_LEVEL 10
 
 // DH11 Sensor
 #include <DHTesp.h>
@@ -37,8 +37,8 @@ unsigned long respond_time = 0; // time that store the request moment
 //#define WAIT_TIME 5000 // How ofter do the request (todo change to DEFINE)
 //#define UPDATE_TIME 5000 // How do we wait before the next loop
 
-#define WAIT_TIME 250000 // How ofter do the request (todo change to DEFINE) 5 min
-#define UPDATE_TIME 2000 // How do we wait before the next loop 5 sec
+#define WAIT_TIME 60000 // How ofter do the request (todo change to DEFINE) 1 min
+#define UPDATE_TIME 2000 // How do we wait before the next loop 2 sec
 
 //json
 #include <ArduinoJson.h>
@@ -421,12 +421,12 @@ void displayDHT()
 void setContrast()
 {
   int A0_read = analogRead(A0);
-  uint8_t brightness = map(A0_read, 0, 1024, 0, 255);
+  //uint8_t brightness = map(A0_read, 0, 1024, 0, 255);
 
-  if (brightness >DISPLAY_OFF_LEVEL )
+  if (A0_read >DISPLAY_OFF_LEVEL )
   {
     wakeDisplay();
-   if (brightness > DISPLAY_DIM_LEVEL )
+   if (A0_read > DISPLAY_DIM_LEVEL )
       display.dim(false);
     else
       display.dim(true);     
@@ -434,7 +434,7 @@ void setContrast()
   else  
      sleepDisplay();
    
-  Serial.print("Photoresistor: "); Serial.print(A0_read); Serial.print(" - "); Serial.println(brightness);
+  Serial.print("Photoresistor: "); Serial.println(A0_read); //Serial.print(" - "); Serial.println(brightness);
 }
 
 void sleepDisplay() {
