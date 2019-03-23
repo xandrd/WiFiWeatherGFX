@@ -5,6 +5,11 @@
 
 // Display
 #define OLED_RESET -1
+//#define OLED_RESET D2
+#define SCREEN_WIDTH 128 // OLED display width, in pixels (does not work)
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels (does not work)
+#define SSD1306_128_64 // Must be defined in the library Adafruit_SSD1306.h
+
 Adafruit_SSD1306 display(OLED_RESET);
 #include <SPI.h>
 #include <Wire.h>
@@ -22,6 +27,13 @@ DHTesp dht;
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 
+// WatchDog (Interrupts)
+#include <Ticker.h>
+#define WatchDogSeconds 1
+#define WatchDogMaxCounter 10
+Ticker watchDogTicker;
+volatile int watchDogCounter = 0;
+
 #include "constant.h"
 #define CITY "Marina%20Del%20Rey"
 //#define CITY "Miami"
@@ -37,8 +49,9 @@ unsigned long respond_time = 0; // time that store the request moment
 //#define WAIT_TIME 5000 // How ofter do the request (todo change to DEFINE)
 //#define UPDATE_TIME 5000 // How do we wait before the next loop
 
+//#define WAIT_TIME 60000 // How ofter do the request (todo change to DEFINE) 1 min
 #define WAIT_TIME 60000 // How ofter do the request (todo change to DEFINE) 1 min
-#define UPDATE_TIME 2000 // How do we wait before the next loop 2 sec
+#define UPDATE_TIME 3000 // How do we wait before the next loop 2 sec
 
 //json
 #include <ArduinoJson.h>
@@ -127,6 +140,16 @@ void clearFrame()
   frame.rain = 0;
 }
 
+/// WatchDog
+void watchDogManager_ISR()
+{ 
+  watchDogCounter++;
+  if(watchDogCounter >= WatchDogMaxCounter){
+    Serial.println("Reset by WatchDog");
+    ESP.reset();
+  }
+}
+
 /// WIFI CONNECT FUNCTIONS
 bool wifi_connect()
 {
@@ -190,8 +213,8 @@ bool getJson(const char* url, String * answer)
         // HTTP header has been send and Server response header has been handled
         Serial.printf("[HTTP] GET... code: %d\n", httpCode);
         // file found at server
-        if(httpCode == HTTP_CODE_OK) {
-            *answer = http.getString();
+        if(httpCode == HTTP_CODE_OK) {          
+          *answer = http.getString();
         }
     } else {
         Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
@@ -240,8 +263,8 @@ bool getNowcast()
 
       frame.weather_code = code;
       frame.weather_str = weather_str;
-      frame.temp = String(round(temp)) + deg();
-      frame.temp_range = String(round(temp_min)) + "-" + String(round(temp_max)) + deg();
+      frame.temp = String(round(temp),0) + deg();
+      frame.temp_range = String(round(temp_min),0) + "-" + String(round(temp_max),0) + deg();
       frame.update_time = timeStr(weatherTime);
       return true;
     } 
@@ -272,8 +295,9 @@ bool getForecast()
     
     Serial.println("Getting forecast");
     
-    if(getJson(forecast_url, &respond))
+    if(getJson(forecast_url, &respond))        
     {
+      String tmp = respond;      
       Serial.println("Redusing forecast");
       int count = 0;
       for(int c=0; c<5; c++) // find only 4 items 
@@ -293,7 +317,7 @@ bool getForecast()
       {
         Serial.println("Parsing forecast");
         Serial.println("Getting size:");
-        int walk = min(4, int(root["list"].size()));       
+        int walk = min(4, int(root["list"].size())); 
         Serial.println("Size: " + String(root["list"].size()));
       
         for (int i = 0; i<walk; i++)
@@ -325,7 +349,7 @@ bool getForecast()
         }
 
         frame.rain += rain_get;
-        frame.temp_range = String(round(temp_min)) + "-" + String(round(temp_max)) + deg();
+        frame.temp_range = String(round(temp_min),0) + "-" + String(round(temp_max),0) + deg();
         // Serial.print(frame.rain); Serial.print(" | " + frame.temp_range);
       }
       else
@@ -451,19 +475,22 @@ void wakeDisplay() {
 }
 
 void setup()
-{
+{  
     blinki(5);
     // Setup Serial
     Serial.begin(115200);
     delay(500); // Give some time to connest to the Serial
+    /// Attach watchdog
+    watchDogTicker.attach(WatchDogSeconds, watchDogManager_ISR);
+    
   
     pinMode(LED_BUILTIN,OUTPUT);
     // Setup DHT11
-    dht.setup(13); // Connect DHT sensor to GPIO 2 which is D4
+    dht.setup(13, DHTesp::DHT11); // Connect DHT sensor to GPIO 13
     //dht.setup(2); // Connect DHT sensor to GPIO 2 which is D4
     //dht_2.setup(13); // Connect temp DHT sensor to GPIO 13 which is D7
 
-    //setup Graphix
+    //setup Graphix                  
     display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
     // Clear the buffer.
     display.clearDisplay();
@@ -482,6 +509,8 @@ void setup()
 
 void loop()
 {
+    watchDogCounter = 0; // Reset WatchDog counter. 
+    
     setContrast();
     blinki(2);
     digitalWrite(LED_BUILTIN,LOW);
@@ -513,4 +542,5 @@ void loop()
     
     mf();
     delay(UPDATE_TIME);       
+    Serial.println("Counter: " + String(watchDogCounter));
 }
